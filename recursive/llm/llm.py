@@ -93,6 +93,7 @@ class OpenAIApiProxy():
             "encoding_format": "float",
         }
 
+        response = None
         for attempt in range(self.MAX_RETRIES):
             current_headers = headers.copy()
             try:
@@ -153,6 +154,8 @@ class OpenAIApiProxy():
             elif any(provider_str in model for provider_str in ["google/", "anthropic/", "meta/", "mistral/"]):
                 use_official = "openrouter"
     
+        use_gemini_sdk = False
+
         params_gpt = {
             "model": model,
             "messages": messages,
@@ -199,11 +202,12 @@ class OpenAIApiProxy():
             headers['HTTP-Referer'] = os.getenv('OPENROUTER_REFERER', '')
             headers['X-Title'] = os.getenv('OPENROUTER_TITLE', '')
             use_official = "openrouter"
-        elif (provider == "gemini") or (not provider and "gemini" in model):
+        elif ((provider == "gemini") or (not provider and "gemini" in model)) and use_official != "openrouter":
             # For Gemini, we'll use the Google API directly, not REST API
             api_key = str(os.getenv('GEMINI'))
             genai.configure(api_key=api_key)
             url = None  # Not used for Gemini
+            use_gemini_sdk = True
         
         headers['Content-Type'] = headers['Content-Type'] if 'Content-Type' in headers else 'application/json'
         headers['Authorization'] = "Bearer " + api_key
@@ -278,7 +282,7 @@ class OpenAIApiProxy():
         #         raise
                 
         # Handle Gemini API
-        if "gemini" in model:
+        if use_gemini_sdk:
             try:
                 # Process messages for Gemini format
                 gemini_messages = []
@@ -372,6 +376,20 @@ class OpenAIApiProxy():
                 print(f"Waiting for {sleep_time} seconds before next attempt...", flush=True)
                 time.sleep(sleep_time)
         
+        if response is None:
+            raise RuntimeError("LLM call failed: no HTTP response received after retries")
+
+        if response.status_code in self.RETRY_CODES:
+            logger.error(
+                "LLM provider {} returned unrecoverable status {} after {} attempts: {}".format(
+                    model,
+                    response.status_code,
+                    self.MAX_RETRIES,
+                    response.text[:500]
+                )
+            )
+            response.raise_for_status()
+
         try:
             data = response.json()
         except json.JSONDecodeError:
