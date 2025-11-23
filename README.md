@@ -180,6 +180,37 @@ To use a custom port:
 PORT=8000 npm start
 ```
 
+### Configure Admin Login
+
+All backend endpoints now require authentication. Before starting the backend, create a local admin users file based on the provided template:
+
+```bash
+cp backend/admin_users.example.json backend/admin_users.json
+nano backend/admin_users.json
+```
+
+Add one or more accounts using the following structure:
+
+```json
+{
+  "users": [
+    {
+      "email": "admin@writehere.ai",
+      "password": "strong-password",
+      "name": "Admin User"
+    }
+  ]
+}
+```
+
+The backend reads this file on every login attempt. To store the credentials elsewhere, set the `ADMIN_USERS_FILE` environment variable before launching `server.py`:
+
+```bash
+export ADMIN_USERS_FILE=/secure/path/writehere_admins.json
+```
+
+> ⚠️ Never commit your real `backend/admin_users.json`—the repository only includes `admin_users.example.json` for reference.
+
 ### Troubleshooting
 
 If you encounter any issues, please check the [Troubleshooting Guide](TROUBLESHOOTING.md) for common problems and solutions.

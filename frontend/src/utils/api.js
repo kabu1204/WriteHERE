@@ -19,6 +19,33 @@ const apiClient = axios.create({
   timeout: 30000 // 30 seconds timeout
 });
 
+const getStoredValue = (key) => {
+  return localStorage.getItem(key) || sessionStorage.getItem(key);
+};
+
+apiClient.interceptors.request.use((config) => {
+  const token = getStoredValue('authToken');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && error.response.status === 401) {
+      window.dispatchEvent(new Event('auth:logout'));
+    }
+    return Promise.reject(error);
+  }
+);
+
+export const loginUser = async (email, password) => {
+  const response = await apiClient.post('/login', { email, password });
+  return response.data;
+};
+
 /**
  * Test the API connection
  * @returns {Promise} - Promise that resolves with ping result

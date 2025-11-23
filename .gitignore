@@ -9,6 +9,7 @@ llm.py.bak
 *.DS_Store
 *.egg-info/
 backend/results/
+backend/admin_users.json
 
 # Node.js
 node_modules/

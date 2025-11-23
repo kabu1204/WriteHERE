@@ -6,6 +6,7 @@ import { CssBaseline } from '@mui/material';
 // Components
 import Header from './components/Header';
 import Footer from './components/Footer';
+import PrivateRoute from './components/PrivateRoute';
 
 // Pages
 import HomePage from './pages/HomePage';
@@ -13,6 +14,8 @@ import StoryGenerationPage from './pages/StoryGenerationPage';
 import ReportGenerationPage from './pages/ReportGenerationPage';
 import ResultsPage from './pages/ResultsPage';
 import AboutPage from './pages/AboutPage';
+import LoginPage from './pages/LoginPage';
+import { AuthProvider } from './context/AuthContext';
 
 // Create a theme inspired by Anthropic/OpenAI/Perplexity
 const theme = createTheme({
@@ -167,22 +170,60 @@ const theme = createTheme({
 
 function App() {
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-        <Header />
-        <main style={{ flexGrow: 1, padding: '20px' }}>
-          <Routes>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/story-generation" element={<StoryGenerationPage />} />
-            <Route path="/report-generation" element={<ReportGenerationPage />} />
-            <Route path="/results/:id" element={<ResultsPage />} />
-            <Route path="/about" element={<AboutPage />} />
-          </Routes>
-        </main>
-        <Footer />
-      </div>
-    </ThemeProvider>
+    <AuthProvider>
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+          <Header />
+          <main style={{ flexGrow: 1, padding: '20px' }}>
+            <Routes>
+              <Route
+                path="/"
+                element={(
+                  <PrivateRoute>
+                    <HomePage />
+                  </PrivateRoute>
+                )}
+              />
+              <Route
+                path="/story-generation"
+                element={(
+                  <PrivateRoute>
+                    <StoryGenerationPage />
+                  </PrivateRoute>
+                )}
+              />
+              <Route
+                path="/report-generation"
+                element={(
+                  <PrivateRoute>
+                    <ReportGenerationPage />
+                  </PrivateRoute>
+                )}
+              />
+              <Route
+                path="/results/:id"
+                element={(
+                  <PrivateRoute>
+                    <ResultsPage />
+                  </PrivateRoute>
+                )}
+              />
+              <Route
+                path="/about"
+                element={(
+                  <PrivateRoute>
+                    <AboutPage />
+                  </PrivateRoute>
+                )}
+              />
+              <Route path="/login" element={<LoginPage />} />
+            </Routes>
+          </main>
+          <Footer />
+        </div>
+      </ThemeProvider>
+    </AuthProvider>
   );
 }
 

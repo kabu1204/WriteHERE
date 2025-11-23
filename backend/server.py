@@ -13,8 +13,9 @@ import re
 import signal
 import argparse
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 
 # Configure logging
 logging.basicConfig(
@@ -33,6 +34,26 @@ parser.add_argument('--port', type=int, default=5001, help='Port to run the serv
 args = parser.parse_args()
 
 app = Flask(__name__)
+# JWT configuration
+app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'writehere-dev-secret')
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=8)
+jwt = JWTManager(app)
+
+@jwt.invalid_token_loader
+def invalid_token_callback(error):
+    logger.error(f"Invalid token error: {error}")
+    return jsonify({"msg": "Invalid token", "error": error}), 401
+
+@jwt.unauthorized_loader
+def missing_token_callback(error):
+    logger.error(f"Missing token error: {error}")
+    return jsonify({"msg": "Missing token", "error": error}), 401
+
+@jwt.expired_token_loader
+def expired_token_callback(jwt_header, jwt_payload):
+    logger.error(f"Expired token: {jwt_payload}")
+    return jsonify({"msg": "Token has expired", "error": "token_expired"}), 401
+
 # Enable CORS with more specific options
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 # Initialize Socket.IO with broader CORS settings for development
@@ -46,6 +67,74 @@ socketio = SocketIO(app,
 task_storage = {}
 RESULTS_DIR = os.path.join(os.path.dirname(__file__), 'results')
 os.makedirs(RESULTS_DIR, exist_ok=True)
+
+ADMIN_USERS_FILE = os.environ.get('ADMIN_USERS_FILE', os.path.join(os.path.dirname(__file__), 'admin_users.json'))
+ADMIN_USERS_LAST_LOADED = None
+ALLOWED_USERS = {}
+
+def load_admin_users_from_file(path):
+    if not os.path.exists(path):
+        logger.warning(f"Admin users file not found at {path}. Login is disabled until the file is created.")
+        return {}
+
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            raw_data = json.load(f)
+    except Exception as exc:
+        logger.error(f"Failed to read admin users file {path}: {exc}")
+        return {}
+
+    entries = []
+    if isinstance(raw_data, dict):
+        if isinstance(raw_data.get('users'), list):
+            entries = raw_data['users']
+        else:
+            entries = [raw_data]
+    elif isinstance(raw_data, list):
+        entries = raw_data
+
+    normalized = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        email = (entry.get('email') or '').strip().lower()
+        password = entry.get('password')
+        name = entry.get('name') or email
+        if not email or not password:
+            continue
+        normalized[email] = {
+            "password": password,
+            "name": name or email
+        }
+
+    if not normalized:
+        logger.warning(f"No valid admin users were found in {path}.")
+
+    return normalized
+
+
+def refresh_admin_users(force=False):
+    global ALLOWED_USERS, ADMIN_USERS_LAST_LOADED
+    try:
+        logger.info(f"Refreshing admin users from file {ADMIN_USERS_FILE}")
+        if not os.path.exists(ADMIN_USERS_FILE):
+            ALLOWED_USERS = {}
+            ADMIN_USERS_LAST_LOADED = None
+            return ALLOWED_USERS
+
+        last_modified = os.path.getmtime(ADMIN_USERS_FILE)
+        if force or ADMIN_USERS_LAST_LOADED != last_modified:
+            ALLOWED_USERS = load_admin_users_from_file(ADMIN_USERS_FILE)
+            ADMIN_USERS_LAST_LOADED = last_modified
+            logger.info(f"Loaded {len(ALLOWED_USERS)} admin user(s) from {ADMIN_USERS_FILE}")
+    except Exception as exc:
+        logger.error(f"Error refreshing admin users: {exc}")
+        ALLOWED_USERS = {}
+        ADMIN_USERS_LAST_LOADED = None
+
+    return ALLOWED_USERS
+
+refresh_admin_users(force=True)
 
 def reload_task_storage():
     """Reload task storage from the file system"""
@@ -340,10 +429,35 @@ def run_report_generation(task_id, prompt, model, enable_search, search_engine, 
         task_storage[task_id]["status"] = "error"
         task_storage[task_id]["error"] = str(e)
 
+
+@app.route('/api/login', methods=['POST'])
+def api_login():
+    data = request.json or {}
+    email = (data.get('email') or '').strip().lower()
+    password = data.get('password') or ''
+    logger.info(f"Login attempt for user {email}")
+
+    users = refresh_admin_users()
+    user = users.get(email)
+    if not user or user['password'] != password:
+        logger.warning(f"Invalid login attempt for user {email}")
+        return jsonify({"error": "Invalid email or password"}), 401
+
+    access_token = create_access_token(identity=email, additional_claims={"name": user['name']})
+    return jsonify({
+        "access_token": access_token,
+        "user": {
+            "email": email,
+            "name": user['name']
+        }
+    })
+
 @app.route('/api/generate-story', methods=['POST'])
+@jwt_required()
 def api_generate_story():
     data = request.json
-    logger.info(f"Received generate-story request: {data.get('model')}")
+    current_user_email = get_jwt_identity()
+    logger.info(f"[{current_user_email}] Received generate-story request: {data.get('model')}")
     
     # Validate request
     required_fields = ['prompt', 'model', 'apiKeys']
@@ -369,9 +483,11 @@ def api_generate_story():
     })
 
 @app.route('/api/generate-report', methods=['POST'])
+@jwt_required()
 def api_generate_report():
     data = request.json
-    logger.info(f"Received generate-report request: {data.get('model')}")
+    current_user_email = get_jwt_identity()
+    logger.info(f"[{current_user_email}] Received generate-report request: {data.get('model')}")
     
     # Validate request
     required_fields = ['prompt', 'model', 'apiKeys']
@@ -401,6 +517,7 @@ def api_generate_report():
     })
 
 @app.route('/api/status/<task_id>', methods=['GET'])
+@jwt_required()
 def api_get_status(task_id):
     # If task is not in memory, try to load it
     if task_id not in task_storage:
@@ -450,6 +567,7 @@ def api_get_status(task_id):
     })
 
 @app.route('/api/result/<task_id>', methods=['GET'])
+@jwt_required()
 def api_get_result(task_id):
     logger.info(f"Fetching result for task {task_id}")
     # If task is not in memory, try to load it
@@ -668,6 +786,7 @@ def transform_node_to_graph(node, seen_nodes=None, root=False):
     return transformed
 
 @app.route('/api/task-graph/<task_id>', methods=['GET'])
+@jwt_required()
 def api_get_task_graph(task_id):
     """
     Get the task graph data (nodes and edges) for a specific task
@@ -741,6 +860,7 @@ def api_get_task_graph(task_id):
         return jsonify({"error": f"Failed to read task graph data: {str(e)}"}), 500
 
 @app.route('/api/reload', methods=['POST'])
+@jwt_required()
 def api_reload_tasks():
     """Reload all tasks from the file system"""
     reload_task_storage()
@@ -751,6 +871,7 @@ def api_reload_tasks():
     })
     
 @app.route('/api/stop-task/<task_id>', methods=['POST'])
+@jwt_required()
 def api_stop_task(task_id):
     """Stop a running task"""
     logger.info(f"Received stop-task request for {task_id}")
@@ -862,6 +983,7 @@ def api_stop_task(task_id):
         }), 500
 
 @app.route('/api/delete-task/<task_id>', methods=['DELETE'])
+@jwt_required()
 def api_delete_task(task_id):
     """Delete a previously generated task and its associated files"""
     logger.info(f"Received delete-task request for {task_id}")
@@ -906,6 +1028,7 @@ def api_delete_task(task_id):
         }), 500
 
 @app.route('/api/history', methods=['GET'])
+@jwt_required()
 def api_get_history():
     """Get a list of previously generated tasks with their basic info"""
     # Make sure task_storage is up to date
@@ -965,6 +1088,7 @@ def api_get_history():
     })
 
 @app.route('/api/workspace/<task_id>', methods=['GET'])
+@jwt_required()
 def api_get_workspace(task_id):
     """Get the article.txt content for a task"""
     task_dir = os.path.join(RESULTS_DIR, 'records', task_id)

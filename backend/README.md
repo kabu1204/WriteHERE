@@ -21,6 +21,24 @@ python server.py
 
 The server will start on http://localhost:5001.
 
+### Configure Admin Accounts
+
+Authentication is enforced for every API endpoint. Define at least one admin account by copying the example file:
+
+```bash
+cp admin_users.example.json admin_users.json
+nano admin_users.json
+```
+
+Each entry should include `email`, `password`, and (optionally) `name` fields. The backend reloads the file whenever it changes. To keep the credentials outside the repository, point the server to a custom location:
+
+```bash
+export ADMIN_USERS_FILE=/secure/path/writehere_admins.json
+python server.py
+```
+
+> Do not commit `admin_users.json`. It is ignored by default.
+
 ## API Endpoints
 
 ### Generate Story

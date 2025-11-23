@@ -20,11 +20,14 @@ import MenuIcon from '@mui/icons-material/Menu';
 import CloseIcon from '@mui/icons-material/Close';
 import CreateIcon from '@mui/icons-material/Create';
 import EditNoteIcon from '@mui/icons-material/EditNote';
+import LogoutIcon from '@mui/icons-material/Logout';
+import { useAuth } from '../context/AuthContext';
 
 const Header = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const { isAuthenticated, logout, user } = useAuth();
 
   const toggleDrawer = () => {
     setDrawerOpen(!drawerOpen);
@@ -36,6 +39,11 @@ const Header = () => {
     { text: 'Report Generation', path: '/report-generation' },
     { text: 'About', path: '/about' }
   ];
+
+  const handleLogout = () => {
+    logout();
+    setDrawerOpen(false);
+  };
 
   const drawer = (
     <Box sx={{ width: 280, padding: 2 }} role="presentation">
@@ -112,6 +120,32 @@ const Header = () => {
           </ListItem>
         ))}
       </List>
+      <Divider sx={{ my: 2 }} />
+      {isAuthenticated ? (
+        <Button
+          variant="contained"
+          color="primary"
+          fullWidth
+          sx={{ py: 1.5, borderRadius: 2 }}
+          onClick={handleLogout}
+          startIcon={<LogoutIcon />}
+        >
+          Log Out
+        </Button>
+      ) : (
+        <Button
+          component={RouterLink}
+          to="/login"
+          variant="contained"
+          color="primary"
+          fullWidth
+          sx={{ py: 1.5, borderRadius: 2 }}
+          onClick={toggleDrawer}
+          startIcon={<CreateIcon />}
+        >
+          Log In
+        </Button>
+      )}
     </Box>
   );
 
@@ -221,6 +255,33 @@ const Header = () => {
                   {item.text}
                 </Button>
               ))}
+              {isAuthenticated ? (
+                <>
+                  <Typography variant="body2" color="text.secondary" sx={{ mr: 1 }}>
+                    {user?.name || user?.email}
+                  </Typography>
+                  <Button
+                    variant="outlined"
+                    color="primary"
+                    startIcon={<LogoutIcon />}
+                    sx={{ borderRadius: 3, ml: 1 }}
+                    onClick={handleLogout}
+                  >
+                    Log Out
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  component={RouterLink}
+                  to="/login"
+                  variant="contained"
+                  color="primary"
+                  startIcon={<CreateIcon />}
+                  sx={{ borderRadius: 3, ml: 1 }}
+                >
+                  Log In
+                </Button>
+              )}
             </Box>
           )}
           
