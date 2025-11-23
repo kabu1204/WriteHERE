@@ -24,143 +24,14 @@ import ReactMarkdown from 'react-markdown';
 import LiveTaskList from '../components/LiveTaskList';
 import DownloadIcon from '@mui/icons-material/Download';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import { getGenerationStatus, getGenerationResult, getTaskGraph, reloadTasks, stopTask } from '../utils/api';
+import { getGenerationStatus, getGenerationResult, reloadTasks, stopTask } from '../utils/api';
 
-// Mock data for task graph - this would come from your backend in a real implementation
-const mockGraphData = {
-  id: '',
-  goal: 'Write a report on AI writing agents',
-  task_type: 'write',
-  status: 'FINISH',
-  sub_tasks: [
-    {
-      id: '0',
-      goal: 'Plan the report structure',
-      task_type: 'think',
-      status: 'FINISH',
-      sub_tasks: []
-    },
-    {
-      id: '1',
-      goal: 'Research commercial applications',
-      task_type: 'search',
-      status: 'FINISH',
-      sub_tasks: []
-    },
-    {
-      id: '2',
-      goal: 'Analyze market trends',
-      task_type: 'think',
-      status: 'FINISH',
-      sub_tasks: []
-    },
-    {
-      id: '3',
-      goal: 'Write introduction',
-      task_type: 'write',
-      status: 'FINISH',
-      sub_tasks: []
-    },
-    {
-      id: '4',
-      goal: 'Write benefits section',
-      task_type: 'write',
-      status: 'FINISH',
-      sub_tasks: []
-    },
-    {
-      id: '5',
-      goal: 'Write challenges section',
-      task_type: 'write',
-      status: 'FINISH',
-      sub_tasks: []
-    },
-    {
-      id: '6',
-      goal: 'Write conclusion',
-      task_type: 'write',
-      status: 'FINISH',
-      sub_tasks: []
-    }
-  ]
+const defaultGenerationDetails = {
+  prompt: 'Loading prompt...',
+  model: 'Loading model...',
+  type: 'unknown',
+  status: 'unknown'
 };
-
-// Mock content for the generated report/story - would come from your backend
-const mockContent = `# The Commercial Value of Long-Article Writing AI Agents
-
-## Introduction
-
-Long-article writing AI agents represent a significant advancement in artificial intelligence technology, offering a powerful tool for content creation that combines the efficiency of automation with increasingly sophisticated writing capabilities. These AI agents are designed to generate extended pieces of content—from blog posts and articles to reports and creative narratives—with minimal human intervention. As businesses and organizations continue to prioritize content marketing and information dissemination, the commercial potential of these tools has grown substantially.
-
-## Market Overview
-
-The global market for AI writing tools is experiencing rapid growth, with the long-form content segment emerging as a particularly valuable niche. According to recent market analyses, the AI content creation market is expected to reach $2.6 billion by 2026, with long-form content generation tools representing approximately 35% of this value. This growth is driven by increasing demand for content across multiple industries, from media and publishing to education and enterprise documentation.
-
-## Key Commercial Applications
-
-Long-article writing AI agents offer commercial value across numerous sectors:
-
-### Content Marketing
-
-Content marketing remains one of the primary applications for long-form AI writers. Businesses can generate blog posts, white papers, and industry analyses at scale, maintaining consistent publishing schedules without proportionally increasing their content team. This enables companies to maintain a robust content marketing strategy even with limited human resources.
-
-### Publishing and Media
-
-Media organizations can utilize AI writing agents to produce routine reporting, freeing human journalists to focus on investigative work, interviews, and complex storytelling. This hybrid approach allows publishers to maintain or increase output while directing human talent toward higher-value activities.
-
-### E-commerce
-
-Product descriptions, category pages, and buying guides represent significant content needs for e-commerce businesses. Long-form AI writers can generate detailed product content that incorporates SEO best practices while maintaining consistent brand voice across thousands of products.
-
-### Education and Training
-
-Educational institutions and corporate training departments can leverage AI writers to develop course materials, study guides, and instructional content. This application is particularly valuable for technical subjects where clear, structured explanation is essential.
-
-## ROI Considerations
-
-The commercial value of long-article writing AI agents can be assessed through several ROI factors:
-
-1. **Labor Cost Reduction**: AI writers can reduce the cost of content production by 60-80% compared to professional human writers, particularly for routine content needs.
-
-2. **Time Efficiency**: Content that might take a human writer several days can be generated in minutes, allowing for faster publication cycles and more responsive content strategies.
-
-3. **Scalability**: Businesses can scale content operations without proportional increases in staff, enabling content marketing at enterprise scale even for smaller organizations.
-
-4. **Consistency**: AI writers maintain consistent tone, style, and quality across all content, eliminating variations that can occur with multiple human writers.
-
-## Challenges and Limitations
-
-Despite their commercial promise, long-article writing AI agents face several challenges that impact their commercial value:
-
-### Quality Considerations
-
-While AI writing quality has improved dramatically, the output still requires human review and editing for high-stakes content. This creates a hybrid workflow rather than full automation, somewhat limiting cost savings.
-
-### Originality Concerns
-
-AI-generated content may lack truly original insights or creative approaches that human writers can provide, potentially limiting its value for thought leadership content or creative applications.
-
-### Technical Limitations
-
-Current AI models still struggle with factual accuracy for specialized topics, requiring subject matter expert review to prevent misinformation, which adds to the workflow cost.
-
-## Future Commercial Potential
-
-The commercial value of long-article writing AI agents is likely to increase as the technology evolves:
-
-1. **Improved Specialization**: Industry and domain-specific AI writers will offer higher quality for specialized fields like legal, medical, or technical writing.
-
-2. **Enhanced Integration**: AI writing tools integrated with content management systems, SEO tools, and analytics platforms will provide end-to-end content solutions.
-
-3. **Multimodal Capabilities**: Future AI writers will likely incorporate image generation, video script creation, and interactive content capabilities, increasing their value proposition.
-
-## Conclusion
-
-Long-article writing AI agents offer substantial commercial value through cost reduction, efficiency gains, and content scalability. While they don't fully replace human writers, they represent a powerful augmentation tool that enables organizations to produce more content at lower cost. The most successful commercial applications currently involve a human-AI collaboration model, where AI handles initial drafting and humans provide editing, fact-checking, and creative direction.
-
-As technology continues to advance, the commercial value of these tools will likely increase further, with more specialized capabilities and improved quality reducing the need for human intervention. Organizations that effectively integrate AI writing agents into their content workflows stand to gain significant competitive advantages in content production capacity, potentially transforming content from a cost center to a scalable business asset.`;
-
-// Pass the task graph directly to the TaskList component which handles hierarchy internally
 
 const ResultsPage = () => {
   const { id } = useParams();
@@ -170,7 +41,6 @@ const ResultsPage = () => {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [taskList, setTaskList] = useState([]);
   const [generationStatus, setGenerationStatus] = useState('generating');
   const [copySuccess, setCopySuccess] = useState('');
   const [progress, setProgress] = useState(0);
@@ -178,13 +48,14 @@ const ResultsPage = () => {
   const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
   const [stopInProgress, setStopInProgress] = useState(false);
 
-  // Get the generation details from location state
-  const generationDetails = location.state || {
-    prompt: 'Loading prompt...',
-    model: 'Loading model...',
-    type: 'unknown',
-    status: 'unknown'
-  };
+  // Track generation details from navigation state + async updates
+  const [generationDetails, setGenerationDetails] = useState(
+    () => location.state || defaultGenerationDetails
+  );
+
+  useEffect(() => {
+    setGenerationDetails(location.state || defaultGenerationDetails);
+  }, [location.state]);
 
   // Poll status and fetch result when ready
   useEffect(() => {
@@ -216,11 +87,11 @@ const ResultsPage = () => {
           
           // Update model information if available
           if (statusData.model && statusData.model !== 'unknown') {
-            generationDetails.model = statusData.model;
+            setGenerationDetails(prev => ({ ...prev, model: statusData.model }));
           }
           
           if (statusData.searchEngine) {
-            generationDetails.searchEngine = statusData.searchEngine;
+            setGenerationDetails(prev => ({ ...prev, searchEngine: statusData.searchEngine }));
           }
           
           // Update progress based on status
@@ -234,27 +105,11 @@ const ResultsPage = () => {
               
               // Update model information from result if available
               if (resultData.model && resultData.model !== 'unknown') {
-                generationDetails.model = resultData.model;
+                setGenerationDetails(prev => ({ ...prev, model: resultData.model }));
               }
               
               if (resultData.searchEngine) {
-                generationDetails.searchEngine = resultData.searchEngine;
-              }
-              
-              // Fetch the task graph data
-              try {
-                const graphData = await getTaskGraph(id);
-                if (graphData && graphData.taskGraph) {
-                  // Pass the task graph directly without flattening
-                  setTaskList(graphData.taskGraph);
-                } else {
-                  console.warn("Task graph data not available, using mock data as fallback");
-                  setTaskList(mockGraphData);
-                }
-              } catch (graphErr) {
-                console.warn("Failed to fetch task graph:", graphErr);
-                // Fallback to mock data if task graph fetch fails
-                setTaskList(mockGraphData);
+                setGenerationDetails(prev => ({ ...prev, searchEngine: resultData.searchEngine }));
               }
               
               clearInterval(pollInterval);
@@ -291,24 +146,11 @@ const ResultsPage = () => {
               
               // Update model information from result if available
               if (resultData.model && resultData.model !== 'unknown') {
-                generationDetails.model = resultData.model;
+                setGenerationDetails(prev => ({ ...prev, model: resultData.model }));
               }
               
               if (resultData.searchEngine) {
-                generationDetails.searchEngine = resultData.searchEngine;
-              }
-              
-              // Fetch the task graph data
-              try {
-                const graphData = await getTaskGraph(id);
-                if (graphData && graphData.taskGraph) {
-                  // Pass the task graph directly without flattening
-                  setTaskList(graphData.taskGraph);
-                } else {
-                  setTaskList(mockGraphData);
-                }
-              } catch (graphErr) {
-                setTaskList(mockGraphData);
+                setGenerationDetails(prev => ({ ...prev, searchEngine: resultData.searchEngine }));
               }
               
               clearInterval(pollInterval);
@@ -430,8 +272,11 @@ const ResultsPage = () => {
             </Typography>
             <Divider sx={{ mb: 2 }} />
             
-            <Typography variant="body1" sx={{ mb: 2 }}>
-              <strong>Prompt:</strong> {generationDetails.prompt.slice(0, 150)}{generationDetails.prompt.length > 150 ? '...' : ''}
+            <Typography
+              variant="body1"
+              sx={{ mb: 2, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+            >
+              <strong>Prompt:</strong> {generationDetails.prompt || ''}
             </Typography>
             
             <Typography variant="body1" sx={{ mb: 2 }}>

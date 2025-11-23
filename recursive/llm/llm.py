@@ -233,49 +233,49 @@ class OpenAIApiProxy():
                 params_gpt['system'] = messages.pop(0)['content']
         
         # Handle OpenRouter API via official OpenAI client
-        if use_official == "openrouter":
-            try:
-                site_url = os.getenv('OPENROUTER_REFERER', '')
-                site_name = os.getenv('OPENROUTER_TITLE', '')
+        # if use_official == "openrouter":
+        #     try:
+        #         site_url = os.getenv('OPENROUTER_REFERER', '')
+        #         site_name = os.getenv('OPENROUTER_TITLE', '')
                 
-                # Initialize OpenAI client with OpenRouter base URL
-                client = OpenAI(
-                    base_url="https://openrouter.ai/api/v1",
-                    api_key=api_key,
-                )
+        #         # Initialize OpenAI client with OpenRouter base URL
+        #         client = OpenAI(
+        #             base_url="https://openrouter.ai/api/v1",
+        #             api_key=api_key,
+        #         )
                 
-                # Prepare extra headers
-                extra_headers = {}
-                if site_url:
-                    extra_headers["HTTP-Referer"] = site_url
-                if site_name:
-                    extra_headers["X-Title"] = site_name
+        #         # Prepare extra headers
+        #         extra_headers = {}
+        #         if site_url:
+        #             extra_headers["HTTP-Referer"] = site_url
+        #         if site_name:
+        #             extra_headers["X-Title"] = site_name
                 
-                # Create completion
-                completion = client.chat.completions.create(
-                    extra_headers=extra_headers,
-                    model=model,  # e.g. "google/gemini-2.5-pro-preview"
-                    messages=messages,
-                    temperature=temperature if temperature is not None else 0.7,
-                    **kwargs
-                )
+        #         # Create completion
+        #         completion = client.chat.completions.create(
+        #             extra_headers=extra_headers,
+        #             model=model,  # e.g. "google/gemini-2.5-pro-preview"
+        #             messages=messages,
+        #             temperature=temperature if temperature is not None else 0.7,
+        #             **kwargs
+        #         )
                 
-                # Format response to match expected output
-                result = [{
-                    "message": {
-                        "content": completion.choices[0].message.content
-                    }
-                }]
+        #         # Format response to match expected output
+        #         result = [{
+        #             "message": {
+        #                 "content": completion.choices[0].message.content
+        #             }
+        #         }]
                 
-                # Cache if needed
-                if not no_cache:
-                    llm_cache.save_cache(cache_name, call_args_dict, result)
+        #         # Cache if needed
+        #         if not no_cache:
+        #             llm_cache.save_cache(cache_name, call_args_dict, result)
                 
-                return result
+        #         return result
                 
-            except Exception as e:
-                logger.error(f"Error with OpenRouter API: {e}")
-                raise
+        #     except Exception as e:
+        #         logger.error(f"Error with OpenRouter API: {e}")
+        #         raise
                 
         # Handle Gemini API
         if "gemini" in model:
@@ -372,7 +372,11 @@ class OpenAIApiProxy():
                 print(f"Waiting for {sleep_time} seconds before next attempt...", flush=True)
                 time.sleep(sleep_time)
         
-        data = response.json()
+        try:
+            data = response.json()
+        except json.JSONDecodeError:
+            logger.error(f"Failed to decode JSON response from {url}. Status: {response.status_code}, Response: {response.text}")
+            raise
         
         if self.verbose:
             logger.info("Response: {}".format(json.dumps(data, ensure_ascii=False, indent=4)))
