@@ -188,7 +188,8 @@ def story_writing(input_filename,
                   end,
                   done_flag_file,
                   global_use_model,
-                  nodes_json_file=None):
+                  nodes_json_file=None,
+                  provider=None):
     
     config = {
         "language": "en", 
@@ -216,6 +217,7 @@ def story_writing(input_filename,
                 "prompt_version": "StoryWrtingNLWriterEN",
                 "llm_args": {
                     "model": global_use_model,
+                    "provider": provider,
                     "temperature": 0.3
                 },
                 "parse_arg_dict": {
@@ -228,6 +230,7 @@ def story_writing(input_filename,
                 "with_update_prompt_version": "StoryWritingNLWriteAtomWithUpdateEN",
                 "llm_args": {
                     "model": global_use_model,
+                    "provider": provider,
                     "temperature": 0.1
                 },
                 "parse_arg_dict": {
@@ -241,6 +244,7 @@ def story_writing(input_filename,
                 "prompt_version": "StoryWritingNLPlanningEN",
                 "llm_args": {
                     "model": global_use_model,
+                    "provider": provider,
                     "temperature": 0.1
                 },
                 "parse_arg_dict": {
@@ -259,6 +263,7 @@ def story_writing(input_filename,
                 "prompt_version": "StoryWrtingNLReasonerEN",
                 "llm_args": {
                     "model": global_use_model,
+                    "provider": provider,
                     "temperature": 0.3
                 },
                 "parse_arg_dict": {
@@ -273,6 +278,11 @@ def story_writing(input_filename,
             "final_aggregate": {
                 "prompt_version": "StoryWritingReasonerFinalAggregate",
                 "mode": "llm",
+                "llm_args": {
+                    "model": global_use_model,
+                    "provider": provider,
+                    "temperature": 0.2
+                },
                 "parse_arg_dict": {
                     "result": ["result"],
                 },
@@ -336,7 +346,11 @@ def story_writing(input_filename,
             # result = engine.forward_one_step_untill_done(save_folder=folder, to_run_check_str = check_str) 
             result = engine.forward_one_step_untill_done(save_folder=folder, nl=True, nodes_json_file=nodes_json_file)    
         except Exception as e:
-            logger.error("Encounter exception: {}\nWhen Process {}".format(traceback.format_exc(), question))
+            error_msg = "Encounter exception: {}\nWhen Process {}".format(traceback.format_exc(), question)
+            logger.error(error_msg)
+            item["result"] = {"error": error_msg}
+            output_f.write(json.dumps(item, ensure_ascii=False) + "\n")
+            output_f.flush()
             continue
             
         item["result"] = result
@@ -359,10 +373,23 @@ def report_writing(input_filename,
                    global_use_model,
                    engine_backend,
                    nodes_json_file=None,
-                   today_date=None):
+                   today_date=None,
+                   provider=None):
     # Use current date if not provided
     if today_date is None:
         today_date = datetime.now().strftime("%b %d, %Y")
+        
+    # Determine selector and summarizer models based on provider
+    selector_model = "gpt-4o-mini"
+    summarizer_model = "gpt-4o-mini"
+    
+    if provider == "deepseek":
+        selector_model = "deepseek-chat"
+        summarizer_model = "deepseek-chat"
+    elif provider == "glm":
+        selector_model = "glm-4-flash"
+        summarizer_model = "glm-4-flash"
+        
     config = {
         "language": "en", 
         # Agent is Defined in recursive.agent.agents.regular
@@ -394,6 +421,7 @@ def report_writing(input_filename,
                 "prompt_version": "ReportWriter",
                 "llm_args": {
                     "model": global_use_model,
+                    "provider": provider,
                     "temperature": 0.3
                 },
                 "parse_arg_dict": {
@@ -406,6 +434,7 @@ def report_writing(input_filename,
                 "with_update_prompt_version": "ReportAtomWithUpdate",
                 "llm_args": {
                     "model": global_use_model,
+                    "provider": provider,
                     "temperature": 0.1
                 },
                 "parse_arg_dict": { # parse args from llm output in xml format
@@ -420,6 +449,7 @@ def report_writing(input_filename,
                 "prompt_version": "ReportPlanning",
                 "llm_args": {
                     "model": global_use_model,
+                    "provider": provider,
                     "temperature": 0.1
                 },
                 "parse_arg_dict": {
@@ -437,6 +467,7 @@ def report_writing(input_filename,
                 "searcher_type": "SearXNG" if str(engine_backend).lower() == 'searxng' else "SerpApiSearch", # see recursive.executor.actions.bing_browser
                 "llm_args": {
                     "model": global_use_model, # set the llm
+                    "provider": provider,
                 },
                 "parse_arg_dict": {
                     "result": ["result"],
@@ -461,15 +492,16 @@ def report_writing(input_filename,
                 "select_quota": 12, # search agent select quota
                 "selector_max_workers": 8, # selector parallel
                 "summarizier_max_workers": 8, # summarizer parallel
-                "selector_model": "gpt-4o-mini",
-                # "selector_model": "gemini-2.0-flash",
-                "summarizer_model": "gpt-4o-mini",
-                # "summarizer_model": "gemini-2.0-flash",
+                "selector_model": selector_model,
+                "summarizer_model": summarizer_model,
+                "selector_provider": provider,
+                "summarizer_provider": provider,
             },
             "search_merge": {
                 "prompt_version": "MergeSearchResultVFinal", # search merge prompt
                 "llm_args": {
                     "model": global_use_model,
+                    "provider": provider,
                 },
                 "parse_arg_dict": {
                     "result": ["result"],
@@ -479,6 +511,7 @@ def report_writing(input_filename,
                 "prompt_version": "ReportSearchOnlyUpdate",
                 "llm_args": {
                     "model": global_use_model,
+                    "provider": provider,
                 },
                 "parse_arg_dict": {
                     "atom_think": ["think"],
@@ -496,6 +529,7 @@ def report_writing(input_filename,
                 "prompt_version": "ReportReasoner",
                 "llm_args": {
                     "model": global_use_model,
+                    "provider": provider,
                     "temperature": 0.3
                 },
                 "parse_arg_dict": {
@@ -564,7 +598,11 @@ def report_writing(input_filename,
         try:
             result = engine.forward_one_step_untill_done(save_folder=folder, nl=True, nodes_json_file=nodes_json_file)    
         except Exception as e:
-            logger.error("Encounter exception: {}\nWhen Process {}".format(traceback.format_exc(), question))
+            error_msg = "Encounter exception: {}\nWhen Process {}".format(traceback.format_exc(), question)
+            logger.error(error_msg)
+            item["result"] = {"error": error_msg}
+            output_f.write(json.dumps(item, ensure_ascii=False) + "\n")
+            output_f.flush()
             continue
             
         
@@ -590,6 +628,7 @@ def define_args():
     parser.add_argument("--mode", type=str, choices=["story", "report"], required=True)
     parser.add_argument("--output-filename", type=str, required=True)
     parser.add_argument("--model", type=str, required=True)
+    parser.add_argument("--provider", type=str, default=None, help="Explicitly specify the LLM provider (e.g., openai, anthropic, openrouter, deepseek, glm)")
     parser.add_argument("--length", type=int)
     parser.add_argument("--engine-backend", type=str)
     parser.add_argument("--nodes-json-file", type=str, help="Path to save nodes.json for real-time visualization")
@@ -610,8 +649,8 @@ if __name__ == "__main__":
     if args.mode == "story":
         story_writing(args.filename, args.output_filename,
                       args.start, args.end, args.done_flag_file, args.model,
-                      nodes_json_file=args.nodes_json_file)
+                      nodes_json_file=args.nodes_json_file, provider=args.provider)
     else:
         report_writing(args.filename, args.output_filename,
                        args.start, args.end, args.done_flag_file, args.model, args.engine_backend,
-                       nodes_json_file=args.nodes_json_file, today_date=args.today_date)
+                       nodes_json_file=args.nodes_json_file, today_date=args.today_date, provider=args.provider)

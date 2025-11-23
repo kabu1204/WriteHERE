@@ -441,6 +441,8 @@ class BingBrowser(BaseAction):
                  summarizier_max_workers = 8,
                  selector_model = "gpt-4o-mini",
                  summarizer_model = "gpt-4o-mini",
+                 selector_provider = None,
+                 summarizer_provider = None,
                  **kwargs):
         
         self.searcher_type = searcher_type
@@ -456,6 +458,8 @@ class BingBrowser(BaseAction):
         
         self.selector_model = selector_model
         self.summarizer_model = summarizer_model
+        self.selector_provider = selector_provider
+        self.summarizer_provider = summarizer_provider
         
         super().__init__(description, parser, enable)
     
@@ -532,10 +536,10 @@ class BingBrowser(BaseAction):
     def __select_and_summarize(self, search_results, question, think, N, query_list):
         search_results = selector(search_results, question, think, N, query_list, 
                                   self.language, self.selector_max_workers,
-                                  self.selector_model)
+                                  self.selector_model, self.selector_provider)
         search_results = summarizier(search_results, question, think, 
                                      self.language, self.summarizier_max_workers,
-                                     self.summarizer_model)
+                                     self.summarizer_model, self.summarizer_provider)
         return search_results
 
  

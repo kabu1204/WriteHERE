@@ -305,6 +305,8 @@ class SimpleExcutor(Agent):
                                            summarizier_max_workers = inner_kwargs["summarizier_max_workers"],
                                            selector_model = inner_kwargs["selector_model"],
                                            summarizer_model = inner_kwargs["summarizer_model"],
+                                           selector_provider = inner_kwargs.get("selector_provider", None),
+                                           summarizer_provider = inner_kwargs.get("summarizer_provider", None),
                                            webpage_helper_max_threads=inner_kwargs["webpage_helper_max_threads"],
                                            backend_engine=inner_kwargs["backend_engine"],
                                            cc=inner_kwargs["cc"])]),
@@ -337,7 +339,8 @@ class SimpleExcutor(Agent):
                                                   to_run_root_question = to_run_root_question,
                                                   to_run_outer_write_task = to_run_outer_write_task,
                                                   today_date = node.config.get('today_date', 'Mar 26, 2025'),
-                                                  temperature=inner_kwargs.get("temperature", None))
+                                                  temperature=inner_kwargs.get("temperature", None),
+                                                  provider=inner_kwargs["llm_args"].get("provider", None))
             
             execute_result = []
             for turn_result in react_agent_result["result"]:

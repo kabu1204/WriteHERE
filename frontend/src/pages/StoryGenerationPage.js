@@ -54,15 +54,32 @@ const examplePrompts = [
 const StoryGenerationPage = () => {
   const [prompt, setPrompt] = useState('');
   const [model, setModel] = useState('claude-3-7-sonnet-20250219');
+  const [provider, setProvider] = useState('');
   const [apiKeys, setApiKeys] = useState({
     openai: localStorage.getItem('openai_api_key') || '',
     claude: localStorage.getItem('claude_api_key') || '',
     gemini: localStorage.getItem('gemini_api_key') || '',
+    openrouter: localStorage.getItem('openrouter_api_key') || '',
+    deepseek: localStorage.getItem('deepseek_api_key') || '',
+    glm: localStorage.getItem('glm_api_key') || ''
   });
+
+  const providers = [
+    { label: 'Auto (Infer from Model)', value: '' },
+    { label: 'OpenAI', value: 'openai' },
+    { label: 'Anthropic', value: 'anthropic' },
+    { label: 'Google Gemini', value: 'gemini' },
+    { label: 'OpenRouter', value: 'openrouter' },
+    { label: 'DeepSeek', value: 'deepseek' },
+    { label: 'GLM', value: 'glm' },
+  ];
   const [showApiSection, setShowApiSection] = useState(false);
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
   const [showClaudeKey, setShowClaudeKey] = useState(false);
   const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [showOpenRouterKey, setShowOpenRouterKey] = useState(false);
+  const [showDeepSeekKey, setShowDeepSeekKey] = useState(false);
+  const [showGLMKey, setShowGLMKey] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
@@ -74,6 +91,9 @@ const StoryGenerationPage = () => {
     if (apiKeys.openai) localStorage.setItem('openai_api_key', apiKeys.openai);
     if (apiKeys.claude) localStorage.setItem('claude_api_key', apiKeys.claude);
     if (apiKeys.gemini) localStorage.setItem('gemini_api_key', apiKeys.gemini);
+    if (apiKeys.openrouter) localStorage.setItem('openrouter_api_key', apiKeys.openrouter);
+    if (apiKeys.deepseek) localStorage.setItem('deepseek_api_key', apiKeys.deepseek);
+    if (apiKeys.glm) localStorage.setItem('glm_api_key', apiKeys.glm);
   }, [apiKeys]);
 
   // Check if API is available on component mount
@@ -99,24 +119,64 @@ const StoryGenerationPage = () => {
     }
     
     // Check if the appropriate API key is provided
-    const isOpenAIModel = model.toLowerCase().includes('gpt');
-    const isClaudeModel = model.toLowerCase().includes('claude');
-    const isGeminiModel = model.toLowerCase().includes('gemini');
+    // If provider is explicitly selected, check that specific key
+    // Otherwise fall back to model name inference
     
-    if (isOpenAIModel && !apiKeys.openai) {
-      setError('Please provide your OpenAI API key in the settings section.');
-      setShowApiSection(true);
-      return;
+    let missingKey = false;
+    let requiredProvider = '';
+    
+    if (provider) {
+      if (provider === 'openai' && !apiKeys.openai) {
+        missingKey = true;
+        requiredProvider = 'OpenAI';
+      } else if (provider === 'anthropic' && !apiKeys.claude) {
+        missingKey = true;
+        requiredProvider = 'Anthropic Claude';
+      } else if (provider === 'gemini' && !apiKeys.gemini) {
+        missingKey = true;
+        requiredProvider = 'Google Gemini';
+      } else if (provider === 'openrouter' && !apiKeys.openrouter) {
+        missingKey = true;
+        requiredProvider = 'OpenRouter';
+      } else if (provider === 'deepseek' && !apiKeys.deepseek) {
+        missingKey = true;
+        requiredProvider = 'DeepSeek';
+      } else if (provider === 'glm' && !apiKeys.glm) {
+        missingKey = true;
+        requiredProvider = 'GLM';
+      }
+    } else {
+      // Auto-detect based on model name
+      const isOpenAIModel = model.toLowerCase().includes('gpt');
+      const isClaudeModel = model.toLowerCase().includes('claude');
+      const isGeminiModel = model.toLowerCase().includes('gemini');
+      const isOpenRouterModel = model.toLowerCase().includes('openrouter');
+      const isDeepSeekModel = model.toLowerCase().includes('deepseek');
+      const isGLMModel = model.toLowerCase().includes('glm');
+      
+      if (isOpenAIModel && !apiKeys.openai) {
+        missingKey = true;
+        requiredProvider = 'OpenAI';
+      } else if (isClaudeModel && !apiKeys.claude) {
+        missingKey = true;
+        requiredProvider = 'Anthropic Claude';
+      } else if (isGeminiModel && !apiKeys.gemini) {
+        missingKey = true;
+        requiredProvider = 'Google Gemini';
+      } else if (isOpenRouterModel && !apiKeys.openrouter) {
+        missingKey = true;
+        requiredProvider = 'OpenRouter';
+      } else if (isDeepSeekModel && !apiKeys.deepseek) {
+        missingKey = true;
+        requiredProvider = 'DeepSeek';
+      } else if (isGLMModel && !apiKeys.glm) {
+        missingKey = true;
+        requiredProvider = 'GLM';
+      }
     }
     
-    if (isClaudeModel && !apiKeys.claude) {
-      setError('Please provide your Anthropic Claude API key in the settings section.');
-      setShowApiSection(true);
-      return;
-    }
-    
-    if (isGeminiModel && !apiKeys.gemini) {
-      setError('Please provide your Google Gemini API key in the settings section.');
+    if (missingKey) {
+      setError(`Please provide your ${requiredProvider} API key in the settings section.`);
       setShowApiSection(true);
       return;
     }
@@ -139,10 +199,14 @@ const StoryGenerationPage = () => {
       const response = await generateStory({
         prompt,
         model,
+        provider: provider || undefined,
         apiKeys: {
           openai: apiKeys.openai,
           claude: apiKeys.claude,
-          gemini: apiKeys.gemini
+          gemini: apiKeys.gemini,
+          openrouter: apiKeys.openrouter,
+          deepseek: apiKeys.deepseek,
+          glm: apiKeys.glm
         }
       });
       
@@ -223,6 +287,25 @@ const StoryGenerationPage = () => {
                 placeholder="Describe the story you want to generate..."
                 variant="outlined"
               />
+            </Grid>
+
+            <Grid item xs={12} md={6}>
+              <FormControl fullWidth variant="outlined">
+                <InputLabel id="provider-select-label">Provider</InputLabel>
+                <Select
+                  labelId="provider-select-label"
+                  id="provider-select"
+                  value={provider}
+                  onChange={(e) => setProvider(e.target.value)}
+                  label="Provider"
+                >
+                  {providers.map((option) => (
+                    <MenuItem key={option.value} value={option.value}>
+                      {option.label}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
             </Grid>
 
             <Grid item xs={12} md={6}>
@@ -355,6 +438,56 @@ const StoryGenerationPage = () => {
                     </Grid>
                     <Grid item xs={12} md={4}>
                       <TextField
+                        label="OpenRouter API Key"
+                        fullWidth
+                        variant="outlined"
+                        value={apiKeys.openrouter}
+                        onChange={(e) => handleApiKeyChange('openrouter', e.target.value)}
+                        type={showOpenRouterKey ? 'text' : 'password'}
+                        placeholder="or-..."
+                        helperText="For OpenRouter-compatible models (e.g., openrouter/<model>)"
+                        InputProps={{
+                          endAdornment: (
+                            <InputAdornment position="end">
+                              <IconButton
+                                aria-label="toggle password visibility"
+                                onClick={() => setShowOpenRouterKey(!showOpenRouterKey)}
+                                edge="end"
+                              >
+                                {showOpenRouterKey ? <VisibilityOff /> : <Visibility />}
+                              </IconButton>
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    </Grid>
+                    <Grid item xs={12} md={4}>
+                      <TextField
+                        label="DeepSeek API Key"
+                        fullWidth
+                        variant="outlined"
+                        value={apiKeys.deepseek}
+                        onChange={(e) => handleApiKeyChange('deepseek', e.target.value)}
+                        type={showDeepSeekKey ? 'text' : 'password'}
+                        placeholder="de-..."
+                        helperText="Required for DeepSeek models (deepseek/*)"
+                        InputProps={{
+                          endAdornment: (
+                            <InputAdornment position="end">
+                              <IconButton
+                                aria-label="toggle password visibility"
+                                onClick={() => setShowDeepSeekKey(!showDeepSeekKey)}
+                                edge="end"
+                              >
+                                {showDeepSeekKey ? <VisibilityOff /> : <Visibility />}
+                              </IconButton>
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    </Grid>
+                    <Grid item xs={12} md={4}>
+                      <TextField
                         label="Anthropic API Key"
                         fullWidth
                         variant="outlined"
@@ -397,6 +530,31 @@ const StoryGenerationPage = () => {
                                 edge="end"
                               >
                                 {showGeminiKey ? <VisibilityOff /> : <Visibility />}
+                              </IconButton>
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    </Grid>
+                    <Grid item xs={12} md={4}>
+                      <TextField
+                        label="GLM API Key"
+                        fullWidth
+                        variant="outlined"
+                        value={apiKeys.glm}
+                        onChange={(e) => handleApiKeyChange('glm', e.target.value)}
+                        type={showGLMKey ? 'text' : 'password'}
+                        placeholder="glm-..."
+                        helperText="Required for GLM models (e.g., glm-4, glm-4-long)"
+                        InputProps={{
+                          endAdornment: (
+                            <InputAdornment position="end">
+                              <IconButton
+                                aria-label="toggle password visibility"
+                                onClick={() => setShowGLMKey(!showGLMKey)}
+                                edge="end"
+                              >
+                                {showGLMKey ? <VisibilityOff /> : <Visibility />}
                               </IconButton>
                             </InputAdornment>
                           ),

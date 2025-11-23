@@ -52,6 +52,9 @@ WriteHERE is developed with these core principles:
   - OpenAI (GPT models)
   - Anthropic (Claude models)
   - SerpAPI (for search functionality in report generation)
+  - OpenRouter (for OpenAI-compatible providers, e.g., routing to OpenRouter-hosted models)
+  - DeepSeek (for DeepSeek chat/reasoning models)
+  - GLM / BigModel (for Zhipu GLM chat models)
 
 ### Quickstart
 

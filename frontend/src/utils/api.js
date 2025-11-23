@@ -42,6 +42,9 @@ export const pingAPI = async () => {
  * @param {string} params.apiKeys.openai - OpenAI API key
  * @param {string} params.apiKeys.claude - Claude API key
  * @param {string} params.apiKeys.gemini - Gemini API key
+ * @param {string} params.apiKeys.openrouter - OpenRouter API key
+ * @param {string} params.apiKeys.deepseek - DeepSeek API key
+ * @param {string} params.apiKeys.glm - GLM API key
  * @returns {Promise} - Promise that resolves with generation result
  */
 export const generateStory = async (params) => {
@@ -79,6 +82,9 @@ export const generateStory = async (params) => {
  * @param {string} params.apiKeys.openai - OpenAI API key
  * @param {string} params.apiKeys.claude - Claude API key
  * @param {string} params.apiKeys.gemini - Gemini API key
+ * @param {string} params.apiKeys.openrouter - OpenRouter API key
+ * @param {string} params.apiKeys.deepseek - DeepSeek API key
+ * @param {string} params.apiKeys.glm - GLM API key
  * @param {string} params.apiKeys.serpapi - SerpAPI key for search
  * @returns {Promise} - Promise that resolves with generation result
  */

@@ -34,7 +34,10 @@ Request body:
   "model": "gpt-4o",
   "apiKeys": {
     "openai": "sk-...",
-    "claude": "sk-ant-..."
+    "claude": "sk-ant-...",
+    "openrouter": "or-...",
+    "deepseek": "de-...",
+    "glm": "glm-..."
   }
 }
 ```
@@ -53,7 +56,10 @@ Request body:
   "apiKeys": {
     "openai": "sk-...",
     "claude": "sk-ant-...",
-    "serpapi": "..."
+    "serpapi": "...",
+    "openrouter": "or-...",
+    "deepseek": "de-...",
+    "glm": "glm-..."
   }
 }
 ```
@@ -72,4 +78,4 @@ GET /api/result/{taskId}
 
 The frontend makes API calls to these endpoints to trigger generation tasks and monitor their progress. The API keys provided by users in the frontend are passed to the backend server, which uses them to authenticate with the respective services.
 
-Note that API keys are never stored on the server beyond the duration of the task execution.
+Note that API keys are never stored on the server beyond the duration of the task execution. OpenRouter-compatible models are supported by providing an `openrouter` key in the payload (persisted as `OPENROUTER`), DeepSeek models can be used by supplying a `deepseek` key (persisted as `DEEPSEEK`), and GLM models are enabled through a `glm` key (persisted as `GLM`).

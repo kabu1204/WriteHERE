@@ -26,6 +26,8 @@ from ..schema import ActionReturn, ActionStatusCode
 from .parser import BaseParser, JsonParser, ParseError
 logging.getLogger('griffe').setLevel(logging.ERROR)
 
+logger = logging.getLogger(__name__)
+
 TOOL_REGISTRY = ClassRegistry('__tool_name__', unique=True)
 
 def tool_api(func: Optional[Callable] = None,
@@ -128,6 +130,7 @@ def tool_api(func: Optional[Callable] = None,
         return kvs
 
     def _parse_tool(function):
+        logger.info(f"Parsing tool: {function.__name__}")
         # remove rst syntax
         docs = Docstring(
             re.sub(':(.+?):`(.+?)`', '\\2', function.__doc__ or '')).parse(
@@ -145,7 +148,10 @@ def tool_api(func: Optional[Callable] = None,
             if doc.kind is DocstringSectionKind.parameters:
                 for d in doc.value:
                     d = d.as_dict()
-                    d['type'] = _detect_type(d["annotation"].lower())
+                    if d["annotation"]:
+                        d['type'] = _detect_type(d["annotation"].lower())
+                    else:
+                        d['type'] = 'STRING'
                     args_doc[d['name']] = d
             if doc.kind is DocstringSectionKind.returns:
                 for d in doc.value:
@@ -163,11 +169,16 @@ def tool_api(func: Optional[Callable] = None,
         for name, param in sig.parameters.items():
             if name == 'self':
                 continue
+            
+            arg_info = args_doc.get(param.name, {})
+            if param.name not in args_doc:
+                logger.warning(f"Parameter '{param.name}' not found in docstring for function '{function.__name__}'. Defaulting to STRING.")
+
             parameter = dict(
                 name=param.name,
-                type=args_doc[param.name]["type"],
-                annotation=args_doc[param.name].get("annotation", ""),
-                description=args_doc[param.name]["description"])
+                type=arg_info.get("type", "STRING"),
+                annotation=arg_info.get("annotation", ""),
+                description=arg_info.get("description", ""))
             desc['parameters'].append(parameter)
             if param.default is inspect.Signature.empty:
                 parameter["required"] = True

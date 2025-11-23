@@ -16,7 +16,8 @@ class EvidenceSelectorAPIClientOpenAI:
         self,
         model,
         max_parralel_requests=10,
-        language = "en"
+        language = "en",
+        provider = None
     ):
         """
         Initialize the API client.
@@ -25,6 +26,7 @@ class EvidenceSelectorAPIClientOpenAI:
         """
         self.model = model
         self.language = language
+        self.provider = provider
         assert language in ("zh", "en")
         # self.llm = OpenAIApiProxy(verbose=False)
         self.llm = OpenAIApiProxy(verbose=VERBOSE)
@@ -100,7 +102,7 @@ Agent正在通过多轮的搜索解决用户问题，你将对**其中一轮搜�
                     {"role": "user", "content": page["to_run_prompt"]},
                     
                 ]
-                response = self.llm.call(messages=msg, model=self.model, overwrite_cache = (cnt > 0 or cnt2 > 0))
+                response = self.llm.call(messages=msg, model=self.model, overwrite_cache = (cnt > 0 or cnt2 > 0), provider=self.provider)
                 if response is None:
                     page["select_response"] = ""
                     page["judgement"] =  0
@@ -171,6 +173,7 @@ class Summarizier:
         model,
         max_parralel_requests=10,
         language = "en",
+        provider = None
     ):
         """
         Initialize the API client.
@@ -182,6 +185,7 @@ class Summarizier:
         self.llm = OpenAIApiProxy(verbose=VERBOSE)
         self.max_parralel_requests = max_parralel_requests
         self.model = model
+        self.provider = provider
         
         self.en_sys_pe = """
 You are an expert in web search and information understanding. The Agent is solving the user's problem through multiple rounds of searching. You will be provided with a search result, and you need to thoroughly and comprehensively organize/extract content from the result that is relevant to both the **user's original question** and the **purpose of this round of search**. The content you organize and extract will replace the original webpage content and will be used by the Agent to answer the user's question and conduct subsequent searches. Therefore, you must ensure **accuracy** and **completeness**.
@@ -267,7 +271,7 @@ Organize and extract as required, focusing solely on the webpage content itself.
                     {"role": "system", "content": self.en_sys_pe if self.language == "en" else self.zh_sys_pe},
                     {"role": "user", "content": page["to_run_prompt"]},
                 ]
-                response = self.llm.call(messages=msg, model=self.model, overwrite_cache=(cnt > 0))
+                response = self.llm.call(messages=msg, model=self.model, overwrite_cache=(cnt > 0), provider=self.provider)
                 
                 if response is None:
                     page["summarizier_response"] = ""
@@ -345,8 +349,8 @@ def format_web_page(page):
     )
 
 
-def selector(web_pages, question, think, N, query_list, language, max_workers, model):    
-    web_pages = EvidenceSelectorAPIClientOpenAI(max_parralel_requests=max_workers, language = language, model=model).compute_score(web_pages, question, think, batch_size=max_workers)
+def selector(web_pages, question, think, N, query_list, language, max_workers, model, provider=None):    
+    web_pages = EvidenceSelectorAPIClientOpenAI(max_parralel_requests=max_workers, language = language, model=model, provider=provider).compute_score(web_pages, question, think, batch_size=max_workers)
     logger.info(
         "Get {} web_pages to select, the result is {}".format(
             len(web_pages), ", ".join(map(str, [page["judgement"] for page in web_pages]))
@@ -384,8 +388,8 @@ def selector(web_pages, question, think, N, query_list, language, max_workers, m
     
     
 
-def summarizier(web_pages, question, think, language, max_workers, model):
-    web_pages = Summarizier(max_parralel_requests=max_workers, language = language, model=model).summarize(web_pages, question, think, batch_size=max_workers)
+def summarizier(web_pages, question, think, language, max_workers, model, provider=None):
+    web_pages = Summarizier(max_parralel_requests=max_workers, language = language, model=model, provider=provider).summarize(web_pages, question, think, batch_size=max_workers)
     return web_pages
     
     
@@ -428,4 +432,3 @@ if __name__ == "__main__":
     summarizier(
         [web_page], "姚明出生那年NBA亚军教练是谁？", think2    
     )
-    

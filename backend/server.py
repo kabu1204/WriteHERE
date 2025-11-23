@@ -14,6 +14,18 @@ import signal
 import argparse
 from pathlib import Path
 from datetime import datetime
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(os.path.join(os.path.dirname(__file__), 'server.log'))
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description='Backend server for WriteHERE application')
@@ -39,6 +51,7 @@ def reload_task_storage():
     """Reload task storage from the file system"""
     global task_storage
     
+    logger.info("Reloading task storage from file system")
     # Iterate through all folders in the results directory
     for task_id in os.listdir(RESULTS_DIR):
         task_dir = os.path.join(RESULTS_DIR, task_id)
@@ -75,7 +88,7 @@ def reload_task_storage():
                                 if engine_backend != "none":
                                     task_storage[task_id]["search_engine"] = engine_backend
                     except Exception as e:
-                        print(f"Error extracting model info from run.sh for {task_id}: {str(e)}")
+                        logger.error(f"Error extracting model info from run.sh for {task_id}: {str(e)}")
                 
                 # Load result if available
                 try:
@@ -83,16 +96,17 @@ def reload_task_storage():
                         result_data = json.load(f)
                         task_storage[task_id]["result"] = result_data.get("result", "No result available")
                 except Exception as e:
-                    print(f"Error loading result file for {task_id}: {str(e)}")
+                    logger.error(f"Error loading result file for {task_id}: {str(e)}")
                     task_storage[task_id]["error"] = f"Failed to load output file: {str(e)}"
 
 # Load existing tasks on startup
 reload_task_storage()
 
-def run_story_generation(task_id, prompt, model, api_keys):
+def run_story_generation(task_id, prompt, model, api_keys, provider=None):
     """
     Run the story generation script as a subprocess
     """
+    logger.info(f"Starting story generation for task {task_id} with model {model}")
     task_dir = os.path.join(RESULTS_DIR, task_id)
     os.makedirs(task_dir, exist_ok=True)
     
@@ -126,15 +140,22 @@ def run_story_generation(task_id, prompt, model, api_keys):
             f.write(f"GEMINI={api_keys['gemini']}\n")
         if 'serpapi' in api_keys and api_keys['serpapi']:
             f.write(f"SERPAPI={api_keys['serpapi']}\n")
+        if 'openrouter' in api_keys and api_keys['openrouter']:
+            f.write(f"OPENROUTER={api_keys['openrouter']}\n")
+        if 'deepseek' in api_keys and api_keys['deepseek']:
+            f.write(f"DEEPSEEK={api_keys['deepseek']}\n")
+        if 'glm' in api_keys and api_keys['glm']:
+            f.write(f"GLM={api_keys['glm']}\n")
     
     # Create a script to run the engine with the appropriate environment
     script_path = os.path.join(task_dir, 'run.sh')
+    provider_arg = f"--provider {provider}" if provider else ""
     with open(script_path, 'w') as f:
         f.write(f"""#!/bin/bash
         cd {os.path.abspath(os.path.join(os.path.dirname(__file__), '../recursive'))}
         source {env_file}
         export TASK_ENV_FILE={env_file}
-        python engine.py --filename {input_file} --output-filename {output_file} --done-flag-file {done_file} --model {model} --mode story --nodes-json-file {nodes_file}
+        python engine.py --filename {input_file} --output-filename {output_file} --done-flag-file {done_file} --model {model} {provider_arg} --mode story --nodes-json-file {nodes_file}
         """)
     
     os.chmod(script_path, 0o755)
@@ -143,7 +164,8 @@ def run_story_generation(task_id, prompt, model, api_keys):
     task_storage[task_id] = {
         "status": "running", 
         "start_time": time.time(),
-        "model": model
+        "model": model,
+        "provider": provider
     }
     
     # Start task progress monitoring in a background thread
@@ -156,6 +178,7 @@ def run_story_generation(task_id, prompt, model, api_keys):
     
     try:
         # Run the script
+        logger.info(f"Executing run script for task {task_id}")
         process = subprocess.Popen(['/bin/bash', script_path], 
                                    stdout=subprocess.PIPE, 
                                    stderr=subprocess.PIPE)
@@ -165,26 +188,42 @@ def run_story_generation(task_id, prompt, model, api_keys):
         
         # Check if the process completed successfully
         if process.returncode == 0:
+            logger.info(f"Task {task_id} completed successfully")
             task_storage[task_id]["status"] = "completed"
             # Store the result if available
-            if os.path.exists(output_file):
-                with open(output_file, 'r') as f:
-                    result_data = json.load(f)
-                    task_storage[task_id]["result"] = result_data.get("result", "No result available")
+            if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
+                try:
+                    with open(output_file, 'r') as f:
+                        result_data = json.load(f)
+                        result_content = result_data.get("result", "No result available")
+                        if isinstance(result_content, dict) and "error" in result_content:
+                             task_storage[task_id]["status"] = "error"
+                             task_storage[task_id]["error"] = result_content["error"]
+                        else:
+                             task_storage[task_id]["result"] = result_content
+                except json.JSONDecodeError:
+                    logger.error(f"Failed to decode JSON from {output_file}")
+                    task_storage[task_id]["status"] = "error"
+                    task_storage[task_id]["error"] = "Failed to decode output file"
             else:
+                logger.error(f"Output file not generated or empty for task {task_id}")
                 task_storage[task_id]["status"] = "error"
-                task_storage[task_id]["error"] = "Output file not generated"
+                task_storage[task_id]["error"] = "Output file not generated or empty"
         else:
+            error_msg = stderr.decode('utf-8')
+            logger.error(f"Task {task_id} failed with error: {error_msg}")
             task_storage[task_id]["status"] = "error"
-            task_storage[task_id]["error"] = stderr.decode('utf-8')
+            task_storage[task_id]["error"] = error_msg
     except Exception as e:
+        logger.error(f"Exception during task {task_id} execution: {str(e)}")
         task_storage[task_id]["status"] = "error"
         task_storage[task_id]["error"] = str(e)
 
-def run_report_generation(task_id, prompt, model, enable_search, search_engine, api_keys):
+def run_report_generation(task_id, prompt, model, enable_search, search_engine, api_keys, provider=None):
     """
     Run the report generation script as a subprocess
     """
+    logger.info(f"Starting report generation for task {task_id} with model {model}, search={enable_search}")
     task_dir = os.path.join(RESULTS_DIR, task_id)
     os.makedirs(task_dir, exist_ok=True)
     
@@ -219,17 +258,24 @@ def run_report_generation(task_id, prompt, model, enable_search, search_engine, 
             f.write(f"GEMINI={api_keys['gemini']}\n")
         if 'serpapi' in api_keys and api_keys['serpapi']:
             f.write(f"SERPAPI={api_keys['serpapi']}\n")
+        if 'openrouter' in api_keys and api_keys['openrouter']:
+            f.write(f"OPENROUTER={api_keys['openrouter']}\n")
+        if 'deepseek' in api_keys and api_keys['deepseek']:
+            f.write(f"DEEPSEEK={api_keys['deepseek']}\n")
+        if 'glm' in api_keys and api_keys['glm']:
+            f.write(f"GLM={api_keys['glm']}\n")
     
     # Create a script to run the engine with the appropriate environment
     script_path = os.path.join(task_dir, 'run.sh')
     engine_backend = search_engine if enable_search else "none"
+    provider_arg = f"--provider {provider}" if provider else ""
     
     with open(script_path, 'w') as f:
         f.write(f"""#!/bin/bash
         cd {os.path.abspath(os.path.join(os.path.dirname(__file__), '../recursive'))}
         source {env_file}
         export TASK_ENV_FILE={env_file}
-        python engine.py --filename {input_file} --output-filename {output_file} --done-flag-file {done_file} --model {model} --engine-backend {engine_backend} --mode report --nodes-json-file {nodes_file}
+        python engine.py --filename {input_file} --output-filename {output_file} --done-flag-file {done_file} --model {model} {provider_arg} --engine-backend {engine_backend} --mode report --nodes-json-file {nodes_file}
         """)
     
     os.chmod(script_path, 0o755)
@@ -239,7 +285,8 @@ def run_report_generation(task_id, prompt, model, enable_search, search_engine, 
         "status": "running", 
         "start_time": time.time(),
         "model": model,
-        "search_engine": engine_backend if enable_search else None
+        "search_engine": engine_backend if enable_search else None,
+        "provider": provider
     }
     
     # Start task progress monitoring in a background thread
@@ -252,6 +299,7 @@ def run_report_generation(task_id, prompt, model, enable_search, search_engine, 
     
     try:
         # Run the script
+        logger.info(f"Executing run script for task {task_id}")
         process = subprocess.Popen(['/bin/bash', script_path], 
                                    stdout=subprocess.PIPE, 
                                    stderr=subprocess.PIPE)
@@ -261,39 +309,57 @@ def run_report_generation(task_id, prompt, model, enable_search, search_engine, 
         
         # Check if the process completed successfully
         if process.returncode == 0:
+            logger.info(f"Task {task_id} completed successfully")
             task_storage[task_id]["status"] = "completed"
             # Store the result if available
-            if os.path.exists(output_file):
-                with open(output_file, 'r') as f:
-                    result_data = json.load(f)
-                    task_storage[task_id]["result"] = result_data.get("result", "No result available")
+            if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
+                try:
+                    with open(output_file, 'r') as f:
+                        result_data = json.load(f)
+                        result_content = result_data.get("result", "No result available")
+                        if isinstance(result_content, dict) and "error" in result_content:
+                             task_storage[task_id]["status"] = "error"
+                             task_storage[task_id]["error"] = result_content["error"]
+                        else:
+                             task_storage[task_id]["result"] = result_content
+                except json.JSONDecodeError:
+                    logger.error(f"Failed to decode JSON from {output_file}")
+                    task_storage[task_id]["status"] = "error"
+                    task_storage[task_id]["error"] = "Failed to decode output file"
             else:
+                logger.error(f"Output file not generated or empty for task {task_id}")
                 task_storage[task_id]["status"] = "error"
-                task_storage[task_id]["error"] = "Output file not generated"
+                task_storage[task_id]["error"] = "Output file not generated or empty"
         else:
+            error_msg = stderr.decode('utf-8')
+            logger.error(f"Task {task_id} failed with error: {error_msg}")
             task_storage[task_id]["status"] = "error"
-            task_storage[task_id]["error"] = stderr.decode('utf-8')
+            task_storage[task_id]["error"] = error_msg
     except Exception as e:
+        logger.error(f"Exception during task {task_id} execution: {str(e)}")
         task_storage[task_id]["status"] = "error"
         task_storage[task_id]["error"] = str(e)
 
 @app.route('/api/generate-story', methods=['POST'])
 def api_generate_story():
     data = request.json
+    logger.info(f"Received generate-story request: {data.get('model')}")
     
     # Validate request
     required_fields = ['prompt', 'model', 'apiKeys']
     for field in required_fields:
         if field not in data:
+            logger.warning(f"Missing required field in generate-story: {field}")
             return jsonify({"error": f"Missing required field: {field}"}), 400
     
     # Generate a unique task ID
     task_id = f"story-{uuid.uuid4()}"
+    logger.info(f"Created task ID: {task_id}")
     
     # Start the generation in a background thread
     thread = threading.Thread(
         target=run_story_generation,
-        args=(task_id, data['prompt'], data['model'], data['apiKeys'])
+        args=(task_id, data['prompt'], data['model'], data['apiKeys'], data.get('provider'))
     )
     thread.start()
     
@@ -305,11 +371,13 @@ def api_generate_story():
 @app.route('/api/generate-report', methods=['POST'])
 def api_generate_report():
     data = request.json
+    logger.info(f"Received generate-report request: {data.get('model')}")
     
     # Validate request
     required_fields = ['prompt', 'model', 'apiKeys']
     for field in required_fields:
         if field not in data:
+            logger.warning(f"Missing required field in generate-report: {field}")
             return jsonify({"error": f"Missing required field: {field}"}), 400
     
     # Set defaults
@@ -318,11 +386,12 @@ def api_generate_report():
     
     # Generate a unique task ID
     task_id = f"report-{uuid.uuid4()}"
+    logger.info(f"Created task ID: {task_id}")
     
     # Start the generation in a background thread
     thread = threading.Thread(
         target=run_report_generation,
-        args=(task_id, data['prompt'], data['model'], enable_search, search_engine, data['apiKeys'])
+        args=(task_id, data['prompt'], data['model'], enable_search, search_engine, data['apiKeys'], data.get('provider'))
     )
     thread.start()
     
@@ -336,7 +405,7 @@ def api_get_status(task_id):
     # If task is not in memory, try to load it
     if task_id not in task_storage:
         task_dir = os.path.join(RESULTS_DIR, task_id)
-        print('debug')
+        # logger.debug(f"Checking status for task {task_id}, not in memory")
         if os.path.isdir(task_dir):
             # Load task into memory
             result_file = os.path.join(task_dir, 'result.jsonl')
@@ -355,7 +424,7 @@ def api_get_status(task_id):
                         result_data = json.load(f)
                         task_storage[task_id]["result"] = result_data.get("result", "No result available")
                 except Exception as e:
-                    print(f"Error loading result file for {task_id}: {str(e)}")
+                    logger.error(f"Error loading result file for {task_id}: {str(e)}")
                     task_storage[task_id]["error"] = f"Failed to load output file: {str(e)}"
             else:
                 return jsonify({"error": "Task not found or incomplete"}), 404
@@ -382,6 +451,7 @@ def api_get_status(task_id):
 
 @app.route('/api/result/<task_id>', methods=['GET'])
 def api_get_result(task_id):
+    logger.info(f"Fetching result for task {task_id}")
     # If task is not in memory, try to load it
     if task_id not in task_storage:
         task_dir = os.path.join(RESULTS_DIR, task_id)
@@ -403,7 +473,7 @@ def api_get_result(task_id):
                         result_data = json.load(f)
                         task_storage[task_id]["result"] = result_data.get("result", "No result available")
                 except Exception as e:
-                    print(f"Error loading result file for {task_id}: {str(e)}")
+                    logger.error(f"Error loading result file for {task_id}: {str(e)}")
                     task_storage[task_id]["error"] = f"Failed to load output file: {str(e)}"
                     return jsonify({"error": f"Failed to load output file: {str(e)}"}), 500
             else:
@@ -632,7 +702,7 @@ def api_get_task_graph(task_id):
                     if 'value' in input_data:
                         prompt = input_data.get('value', '')
             except Exception as e:
-                print(f"Error reading input file: {str(e)}")
+                logger.error(f"Error reading input file: {str(e)}")
         
         simple_graph = {
             "id": "",
@@ -667,7 +737,7 @@ def api_get_task_graph(task_id):
             "taskGraph": transformed_graph
         })
     except Exception as e:
-        print(f"Error processing nodes.json: {str(e)}")
+        logger.error(f"Error processing nodes.json: {str(e)}")
         return jsonify({"error": f"Failed to read task graph data: {str(e)}"}), 500
 
 @app.route('/api/reload', methods=['POST'])
@@ -683,6 +753,7 @@ def api_reload_tasks():
 @app.route('/api/stop-task/<task_id>', methods=['POST'])
 def api_stop_task(task_id):
     """Stop a running task"""
+    logger.info(f"Received stop-task request for {task_id}")
     try:
         # Sanitize task_id to prevent path traversal
         if not re.match(r'^[a-zA-Z0-9_\-]+$', task_id):
@@ -714,10 +785,10 @@ def api_stop_task(task_id):
             
             if result:
                 pid = int(result)
-                print(f"Found Python engine.py process with PID {pid} for task {task_id}")
+                logger.info(f"Found Python engine.py process with PID {pid} for task {task_id}")
                 
                 # Kill the process and its children
-                print(f"Killing process {pid} and its children")
+                logger.info(f"Killing process {pid} and its children")
                 if os.name != 'nt':  # Unix/Linux/MacOS
                     # try:
                     #     # Try to kill process group first
@@ -729,13 +800,13 @@ def api_stop_task(task_id):
                     # Also try direct kill commands
                     os.system(f"kill -9 {pid}")
                     os.system(f"pkill -P {pid}")  # Kill all child processes
-                    print(f"Used kill commands on PID {pid}")
+                    logger.info(f"Used kill commands on PID {pid}")
                 else:
                     # Windows
                     os.system(f"taskkill /F /PID {pid} /T")
-                    print(f"Used taskkill on PID {pid}")
+                    logger.info(f"Used taskkill on PID {pid}")
             else:
-                print(f"Could not find Python engine.py process for task {task_id}")
+                logger.warning(f"Could not find Python engine.py process for task {task_id}")
                 
                 # Fall back to looking for the run.sh process
                 cmd = f"ps -ef | grep '{task_dir}/run.sh' | grep -v grep | awk '{{print $2}}'"
@@ -743,7 +814,7 @@ def api_stop_task(task_id):
                 
                 if result:
                     pid = int(result)
-                    print(f"Found run.sh process with PID {pid} for task {task_id}")
+                    logger.info(f"Found run.sh process with PID {pid} for task {task_id}")
                     
                     # Kill the process
                     if os.name != 'nt':
@@ -752,15 +823,15 @@ def api_stop_task(task_id):
                     else:
                         os.system(f"taskkill /F /PID {pid} /T")
                 else:
-                    print(f"Could not find run.sh process for task {task_id}")
+                    logger.warning(f"Could not find run.sh process for task {task_id}")
                     
         except Exception as e:
-            print(f"Error finding or killing processes for task {task_id}: {str(e)}")
+            logger.error(f"Error finding or killing processes for task {task_id}: {str(e)}")
             
             # As a last resort, try to kill any processes related to the task directory
             if os.name != 'nt':
                 os.system(f"pkill -f '{task_dir}'")
-                print(f"Attempted to kill any processes related to {task_dir}")
+                logger.info(f"Attempted to kill any processes related to {task_dir}")
         
         # Create a done file to indicate the task is stopped
         with open(os.path.join(task_dir, 'done.txt'), 'w') as f:
@@ -784,7 +855,7 @@ def api_stop_task(task_id):
             "message": f"Task {task_id} has been stopped"
         })
     except Exception as e:
-        app.logger.error(f"Error stopping task {task_id}: {str(e)}")
+        logger.error(f"Error stopping task {task_id}: {str(e)}")
         return jsonify({
             "status": "error",
             "error": f"Failed to stop task: {str(e)}"
@@ -793,6 +864,7 @@ def api_stop_task(task_id):
 @app.route('/api/delete-task/<task_id>', methods=['DELETE'])
 def api_delete_task(task_id):
     """Delete a previously generated task and its associated files"""
+    logger.info(f"Received delete-task request for {task_id}")
     try:
         # Sanitize task_id to prevent path traversal
         if not re.match(r'^[a-zA-Z0-9_\-]+$', task_id):
@@ -827,7 +899,7 @@ def api_delete_task(task_id):
             "message": f"Task {task_id} deleted successfully"
         })
     except Exception as e:
-        app.logger.error(f"Error deleting task {task_id}: {str(e)}")
+        logger.error(f"Error deleting task {task_id}: {str(e)}")
         return jsonify({
             "status": "error",
             "error": f"Failed to delete task: {str(e)}"
@@ -909,7 +981,7 @@ def api_get_workspace(task_id):
             "workspace": content
         })
     except Exception as e:
-        print(f"Error reading workspace file: {str(e)}")
+        logger.error(f"Error reading workspace file: {str(e)}")
         return jsonify({"error": f"Failed to read workspace file: {str(e)}"}), 500
 
 @app.route('/api/ping', methods=['GET'])
@@ -926,8 +998,8 @@ def monitor_task_progress(task_id, nodes_dir):
     Monitor task progress and send updates via WebSocket
     """
     try:
-        print(f"Starting task progress monitoring for task: {task_id}")
-        print(f"Monitoring directory: {nodes_dir}")
+        logger.info(f"Starting task progress monitoring for task: {task_id}")
+        logger.debug(f"Monitoring directory: {nodes_dir}")
         
         # Create a basic task structure to start with
         task_graph = {
@@ -938,14 +1010,14 @@ def monitor_task_progress(task_id, nodes_dir):
             "sub_tasks": []
         }
         
-        print(f"Sending initial task_update for {task_id}")
+        logger.debug(f"Sending initial task_update for {task_id}")
         socketio.emit('task_update', {'taskId': task_id, 'taskGraph': task_graph})
         
         # Monitor the nodes.json file for changes
         last_modified = 0
         nodes_file = os.path.join(nodes_dir, 'nodes.json')
         task_dir = os.path.dirname(nodes_dir)
-        print(f"Watching for changes to: {nodes_file}")
+        logger.debug(f"Watching for changes to: {nodes_file}")
         
         while task_storage.get(task_id, {}).get('status') not in ['completed', 'error', 'stopped']:                
             if os.path.exists(nodes_file):
@@ -953,7 +1025,7 @@ def monitor_task_progress(task_id, nodes_dir):
                 
                 if current_modified > last_modified:
                     last_modified = current_modified
-                    print(f"Detected changes to nodes.json, reading file")
+                    # logger.debug(f"Detected changes to nodes.json, reading file")
                     
                     try:
                         with open(nodes_file, 'r') as f:
@@ -963,106 +1035,51 @@ def monitor_task_progress(task_id, nodes_dir):
                         transformed_graph = transform_node_to_graph(nodes_data, root=True)
                         
                         # Send update via WebSocket
-                        print(f"Sending task_update with {len(transformed_graph.get('sub_tasks', []))} sub-tasks")
+                        # logger.debug(f"Sending task_update with {len(transformed_graph.get('sub_tasks', []))} sub-tasks")
                         
                         # Debug output - check if we have action information
                         if 'latest_action' in transformed_graph:
-                            print(f"Root node has latest action: {transformed_graph['latest_action']['name']}")
+                            logger.debug(f"Root node has latest action: {transformed_graph['latest_action']['name']}")
                         
                         # Debug the first subtask if available
                         if transformed_graph.get('sub_tasks') and len(transformed_graph.get('sub_tasks', [])) > 0:
                             first_task = transformed_graph['sub_tasks'][0]
                             if 'latest_action' in first_task:
-                                print(f"First subtask has latest action: {first_task['latest_action']['name']}")
+                                logger.debug(f"First subtask has latest action: {first_task['latest_action']['name']}")
                         
                         socketio.emit('task_update', {
                             'taskId': task_id, 
                             'taskGraph': transformed_graph
                         })
                     except Exception as e:
-                        print(f"Error reading nodes.json: {str(e)}")
+                        logger.error(f"Error reading nodes.json: {str(e)}")
             else:
-                print(f"Waiting for nodes.json file to be created at: {nodes_file}")
+                # logger.debug(f"Waiting for nodes.json file to be created at: {nodes_file}")
+                pass
             
             # Sleep for a short time to avoid high CPU usage
             time.sleep(1)
             
-        print(f"Task {task_id} status changed to {task_storage.get(task_id, {}).get('status')}")
+        logger.info(f"Task {task_id} status changed to {task_storage.get(task_id, {}).get('status')}")
         # Send one final update once the task is complete
         if os.path.exists(nodes_file):
             try:
-                print(f"Reading final state from nodes.json")
+                logger.debug(f"Reading final state from nodes.json")
                 with open(nodes_file, 'r') as f:
                     nodes_data = json.load(f)
                     
                 transformed_graph = transform_node_to_graph(nodes_data, root=True)
-                print(f"Sending final task_update with status {task_storage.get(task_id, {}).get('status')}")
+                logger.info(f"Sending final task_update with status {task_storage.get(task_id, {}).get('status')}")
                 socketio.emit('task_update', {
                     'taskId': task_id, 
                     'taskGraph': transformed_graph,
                     'status': task_storage.get(task_id, {}).get('status', 'unknown')
                 })
             except Exception as e:
-                print(f"Error reading final nodes.json: {str(e)}")
-        else:
-            print(f"Warning: nodes.json file not found for final update: {nodes_file}")
-    
+                logger.error(f"Error reading final nodes.json: {str(e)}")
     except Exception as e:
-        print(f"Error in monitor_task_progress: {str(e)}")
-        import traceback
-        print(traceback.format_exc())
-
-# Socket.IO event handlers
-@socketio.on('connect')
-def handle_connect():
-    print('Client connected')
-    # Send a test message to verify the connection works
-    socketio.emit('connection_test', {'message': 'Connected successfully to the server'})
-
-@socketio.on('disconnect')
-def handle_disconnect():
-    print('Client disconnected')
-
-@socketio.on('subscribe_to_task')
-def handle_subscribe(data):
-    print(f"Received subscription request: {data}")
-    task_id = data.get('taskId')
-    
-    if not task_id:
-        print("No taskId provided in subscription request")
-        emit('subscription_status', {'status': 'error', 'message': 'No taskId provided', 'taskId': None})
-        return
-        
-    print(f"Checking if task {task_id} exists in storage")
-    # Always allow subscription, even if task doesn't exist yet (it might be starting)
-    task_dir = os.path.join(RESULTS_DIR, task_id)
-    nodes_dir = os.path.join(task_dir, 'records')
-    
-    if not os.path.exists(nodes_dir):
-        print(f"Creating nodes directory: {nodes_dir}")
-        os.makedirs(nodes_dir, exist_ok=True)
-    
-    # Start monitoring in a background thread
-    print(f"Starting monitoring thread for task {task_id}")
-    thread = threading.Thread(
-        target=monitor_task_progress,
-        args=(task_id, nodes_dir)
-    )
-    thread.daemon = True
-    thread.start()
-    
-    print(f"Sending subscription confirmation for {task_id}")
-    emit('subscription_status', {'status': 'subscribed', 'taskId': task_id})
-    
-    # Also send an initial update to confirm the subscription worked
-    initial_graph = {
-        "id": "0",
-        "goal": "Task is initializing...",
-        "task_type": "think",
-        "status": "READY",
-        "sub_tasks": []
-    }
-    emit('task_update', {'taskId': task_id, 'taskGraph': initial_graph})
+        logger.error(f"Error monitoring task progress for {task_id}: {str(e)}")
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True, host="0.0.0.0", port=args.port, allow_unsafe_werkzeug=True)
+    logger.info(f"Starting backend server on port {args.port}...")
+    socketio.run(app, host='0.0.0.0', port=args.port, debug=False, allow_unsafe_werkzeug=True)
