@@ -94,6 +94,10 @@ const ResultsPage = () => {
             setGenerationDetails(prev => ({ ...prev, searchEngine: statusData.searchEngine }));
           }
           
+          if (statusData.prompt) {
+            setGenerationDetails(prev => ({ ...prev, prompt: statusData.prompt }));
+          }
+          
           // Update progress based on status
           if (statusData.status === 'completed') {
             setProgress(100);
@@ -110,6 +114,10 @@ const ResultsPage = () => {
               
               if (resultData.searchEngine) {
                 setGenerationDetails(prev => ({ ...prev, searchEngine: resultData.searchEngine }));
+              }
+              
+              if (resultData.prompt) {
+                setGenerationDetails(prev => ({ ...prev, prompt: resultData.prompt }));
               }
               
               clearInterval(pollInterval);
@@ -151,6 +159,10 @@ const ResultsPage = () => {
               
               if (resultData.searchEngine) {
                 setGenerationDetails(prev => ({ ...prev, searchEngine: resultData.searchEngine }));
+              }
+              
+              if (resultData.prompt) {
+                setGenerationDetails(prev => ({ ...prev, prompt: resultData.prompt }));
               }
               
               clearInterval(pollInterval);

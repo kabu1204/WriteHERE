@@ -179,6 +179,19 @@ def reload_task_storage():
                     except Exception as e:
                         logger.error(f"Error extracting model info from run.sh for {task_id}: {str(e)}")
                 
+                # Try to extract prompt from input.jsonl
+                input_file = os.path.join(task_dir, 'input.jsonl')
+                if os.path.exists(input_file):
+                    try:
+                        with open(input_file, 'r') as f:
+                            input_data = json.load(f)
+                            if 'value' in input_data:
+                                task_storage[task_id]["prompt"] = input_data['value']
+                            elif 'prompt' in input_data:
+                                task_storage[task_id]["prompt"] = input_data['prompt']
+                    except Exception as e:
+                        logger.error(f"Error extracting prompt from input.jsonl for {task_id}: {str(e)}")
+                
                 # Load result if available
                 try:
                     with open(result_file, 'r') as f:
@@ -254,7 +267,8 @@ def run_story_generation(task_id, prompt, model, api_keys, provider=None):
         "status": "running", 
         "start_time": time.time(),
         "model": model,
-        "provider": provider
+        "provider": provider,
+        "prompt": prompt
     }
     
     # Start task progress monitoring in a background thread
@@ -375,7 +389,8 @@ def run_report_generation(task_id, prompt, model, enable_search, search_engine, 
         "start_time": time.time(),
         "model": model,
         "search_engine": engine_backend if enable_search else None,
-        "provider": provider
+        "provider": provider,
+        "prompt": prompt
     }
     
     # Start task progress monitoring in a background thread
@@ -563,7 +578,8 @@ def api_get_status(task_id):
         "error": task.get("error"),
         "elapsedTime": time.time() - task["start_time"],
         "model": task.get("model", "unknown"),
-        "searchEngine": task.get("search_engine")
+        "searchEngine": task.get("search_engine"),
+        "prompt": task.get("prompt", "")
     })
 
 @app.route('/api/result/<task_id>', methods=['GET'])
@@ -621,7 +637,8 @@ def api_get_result(task_id):
         "taskId": task_id,
         "result": task.get("result", "No result available"),
         "model": task.get("model", "unknown"),
-        "searchEngine": task.get("search_engine")
+        "searchEngine": task.get("search_engine"),
+        "prompt": task.get("prompt", "")
     })
 
 

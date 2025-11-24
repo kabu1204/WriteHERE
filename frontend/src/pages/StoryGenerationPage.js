@@ -42,6 +42,9 @@ const commonModels = [
   { label: 'GPT-4o-mini', value: 'gpt-4o-mini' },
   { label: 'Gemini 2.5 Pro Exp', value: 'gemini-2.5-pro-exp-03-25' },
   { label: 'Gemini 2.5 Pro Preview', value: 'gemini-2.5-pro-preview-03-25' },
+  { label: 'Kimi K2 Thinking', value: 'moonshotai/kimi-k2-thinking'},
+  { label: 'Grok 4.1 Fast', value: 'x-ai/grok-4.1-fast' },
+  { label: 'GLM-4.6', value: 'z-ai/glm-4.6' }
 ];
 
 // Example prompts for story generation

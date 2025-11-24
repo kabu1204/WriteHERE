@@ -126,6 +126,16 @@ class OpenAIApiProxy():
         data = response.json()
         return data
 
+    def prioritize_openrouter_providers(self, params):
+        model = params.get("model", "").lower()
+        if "kimi" in model:
+            params["provider"] = {
+                "only": ["chutes", "parasail"]
+            }
+        elif "glm" in model:
+            params["provider"] = {
+                "only": ["together", "fireworks"]
+            }
 
     def call(self, model, messages, no_cache = False, overwrite_cache=False, tools=None, temperature=None, headers={}, use_official=None, provider=None, **kwargs):
         assert tools is None
@@ -202,6 +212,7 @@ class OpenAIApiProxy():
             headers['HTTP-Referer'] = os.getenv('OPENROUTER_REFERER', '')
             headers['X-Title'] = os.getenv('OPENROUTER_TITLE', '')
             use_official = "openrouter"
+            self.prioritize_openrouter_providers(params_gpt)
         elif ((provider == "gemini") or (not provider and "gemini" in model)) and use_official != "openrouter":
             # For Gemini, we'll use the Google API directly, not REST API
             api_key = str(os.getenv('GEMINI'))
