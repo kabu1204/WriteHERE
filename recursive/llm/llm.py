@@ -401,12 +401,16 @@ class OpenAIApiProxy():
     
         input_tokens_key = 'prompt_tokens' if is_gpt else 'input_tokens'
         output_tokens_key = 'completion_tokens' if is_gpt else 'output_tokens'
-        output_reason_tokens = data.get('usage', {}).get('completion_tokens_details', {}).get('reasoning_tokens', 0)
+        
+        usage = data.get('usage') or {}
+        completion_tokens_details = usage.get('completion_tokens_details') or {}
+        output_reason_tokens = completion_tokens_details.get('reasoning_tokens', 0)
+        
         if self.verbose:
-            logger.debug("{} Usage: {}".format(model, data.get('usage', {})))
-        if input_tokens_key in data.get('usage', {}) and output_tokens_key in data.get('usage', {}):
-            input_tokens = data.get('usage', {})[input_tokens_key]
-            output_tokens = data.get('usage', {})[output_tokens_key]
+            logger.debug("{} Usage: {}".format(model, usage))
+        if input_tokens_key in usage and output_tokens_key in usage:
+            input_tokens = usage[input_tokens_key]
+            output_tokens = usage[output_tokens_key]
             if model == "gpt-4o":
                 ip = 2.50
                 op = 10.00
