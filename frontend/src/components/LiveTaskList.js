@@ -31,7 +31,7 @@ import TokenIcon from '@mui/icons-material/Token';
 import CodeIcon from '@mui/icons-material/Code';
 import ArticleIcon from '@mui/icons-material/Article';
 import io from 'socket.io-client';
-import { getWorkspace } from '../utils/api';
+import { getWorkspace, getTaskGraph, getGenerationStatus } from '../utils/api';
 
 // Get the backend port from environment variable or use default
 const BACKEND_PORT = process.env.REACT_APP_BACKEND_PORT || '5001';
@@ -39,7 +39,6 @@ const SOCKET_URL =
   window.location.hostname === "localhost"
     ? `http://localhost:${BACKEND_PORT}` // For local development
     : `http://${window.location.hostname}:${BACKEND_PORT}`; // For EC2
-const API_BASE_URL = `${SOCKET_URL}/api`;
 
 // Create a singleton socket instance for the entire application
 let socket;
@@ -202,30 +201,28 @@ const LiveTaskList = ({ taskId, onTaskClick }) => {
     const fetchTaskGraph = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`${API_BASE_URL}/task-graph/${taskId}`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data.taskGraph) {
-            const flatTasks = flattenTasks(data.taskGraph, [], false, 0, null);
-            setTasks(flatTasks);
-            setLoading(false);
-            
-            // Check if the task is already complete
-            const taskStatus = await fetch(`${API_BASE_URL}/status/${taskId}`);
-            if (taskStatus.ok) {
-              const statusData = await taskStatus.json();
-              if (statusData.status && (statusData.status === 'completed' || statusData.status === 'error' || statusData.status === 'stopped')) {
-                console.log('Task is already complete with status:', statusData.status);
-                setIsTaskComplete(true);
-              }
+        const data = await getTaskGraph(taskId);
+        if (data && data.taskGraph) {
+          const flatTasks = flattenTasks(data.taskGraph, [], false, 0, null);
+          setTasks(flatTasks);
+          setLoading(false);
+          
+          // Check if the task is already complete
+          try {
+            const statusData = await getGenerationStatus(taskId);
+            if (statusData.status && (statusData.status === 'completed' || statusData.status === 'error' || statusData.status === 'stopped')) {
+              console.log('Task is already complete with status:', statusData.status);
+              setIsTaskComplete(true);
             }
-            
-            // Try to fetch the workspace content initially
-            fetchWorkspace();
-            
-            // Still connect to socket for potential additional updates
-            return true;
+          } catch (statusError) {
+            console.error('Error fetching task status:', statusError);
           }
+          
+          // Try to fetch the workspace content initially
+          fetchWorkspace();
+          
+          // Still connect to socket for potential additional updates
+          return true;
         }
         return false;
       } catch (error) {
