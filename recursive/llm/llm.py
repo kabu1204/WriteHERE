@@ -136,6 +136,14 @@ class OpenAIApiProxy():
             params["provider"] = {
                 "only": ["together", "fireworks"]
             }
+        elif "deepseek-v3.2" in model:
+            params["provider"] = {
+                "only": ["novita", "atlas-cloud", "deepseek"]
+            }
+        elif "deepseek" in model:
+            params["provider"] = {
+                "only": ["chutes", "gmicloud", "fireworks"]
+            }
 
     def call(self, model, messages, no_cache = False, overwrite_cache=False, tools=None, temperature=None, headers={}, use_official=None, provider=None, **kwargs):
         assert tools is None
